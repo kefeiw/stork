@@ -26,6 +26,7 @@ type ApplicationRestore struct {
 // ApplicationRestoreSpec is the spec used to restore applications
 type ApplicationRestoreSpec struct {
 	BackupName       string                              `json:"backupName"`
+	BackupLocation   string                              `json:"backupLocation"`
 	NamespaceMapping map[string]string                   `json:"namespaceMapping"`
 	Selectors        map[string]string                   `json:"selectors"`
 	EncryptionKey    *corev1.EnvVarSource                `json:"encryptionKey"`
@@ -72,8 +73,9 @@ type ApplicationRestoreResourceInfo struct {
 // ApplicationRestoreVolumeInfo is the info for the restore of a volume
 type ApplicationRestoreVolumeInfo struct {
 	PersistentVolumeClaim string                       `json:"persistentVolumeClaim"`
-	Namespace             string                       `json:"namespace"`
-	Volume                string                       `json:"volume"`
+	SourceNamespace       string                       `json:"sourceNamespace"`
+	SourceVolume          string                       `json:"sourceVolume"`
+	RestoreVolume         string                       `json:"restoreVolume"`
 	Status                ApplicationRestoreStatusType `json:"status"`
 	Reason                string                       `json:"reason"`
 }
@@ -92,6 +94,8 @@ const (
 	ApplicationRestoreStatusFailed ApplicationRestoreStatusType = "Failed"
 	// ApplicationRestoreStatusPartialSuccess for when restore was partially successful
 	ApplicationRestoreStatusPartialSuccess ApplicationRestoreStatusType = "PartialSuccess"
+	// ApplicationRestoreStatusRetained for when restore was skipped to retain an already existing resource
+	ApplicationRestoreStatusRetained ApplicationRestoreStatusType = "Retained"
 	// ApplicationRestoreStatusSuccessful for when restore has completed successfully
 	ApplicationRestoreStatusSuccessful ApplicationRestoreStatusType = "Successful"
 )

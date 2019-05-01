@@ -52,6 +52,7 @@ type ApplicationBackupStatus struct {
 	Status          ApplicationBackupStatusType      `json:"status"`
 	Resources       []*ApplicationBackupResourceInfo `json:"resources"`
 	Volumes         []*ApplicationBackupVolumeInfo   `json:"volumes"`
+	BackupPath      string                           `json:"backupPath"`
 	FinishTimestamp metav1.Time                      `json:"finishTimestamp"`
 }
 
@@ -60,8 +61,6 @@ type ApplicationBackupResourceInfo struct {
 	Name                    string `json:"name"`
 	Namespace               string `json:"namespace"`
 	metav1.GroupVersionKind `json:",inline"`
-	Status                  ApplicationBackupStatusType `json:"status"`
-	Reason                  string                      `json:"reason"`
 }
 
 // ApplicationBackupVolumeInfo is the info for the backup of a volume
