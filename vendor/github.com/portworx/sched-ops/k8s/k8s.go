@@ -85,6 +85,8 @@ type Ops interface {
 	ObjectOps
 	SchedulePolicyOps
 	VolumePlacementStrategyOps
+	BackupLocationOps
+	ApplicationBackupRestoreOps
 	GetVersion() (*version.Info, error)
 	SetConfig(config *rest.Config)
 	SetClient(client kubernetes.Interface, snapClient rest.Interface, storkClient storkclientset.Interface, apiExtensionClient apiextensionsclient.Interface, dynamicInterface dynamic.Interface)
@@ -267,6 +269,8 @@ type RBACOps interface {
 	ListClusterRoleBindings() (*rbac_v1.ClusterRoleBindingList, error)
 	// CreateClusterRoleBinding creates the given cluster role binding
 	CreateClusterRoleBinding(role *rbac_v1.ClusterRoleBinding) (*rbac_v1.ClusterRoleBinding, error)
+	// UpdateClusterRoleBinding updates the given cluster role binding
+	UpdateClusterRoleBinding(role *rbac_v1.ClusterRoleBinding) (*rbac_v1.ClusterRoleBinding, error)
 	// CreateServiceAccount creates the given service account
 	CreateServiceAccount(account *v1.ServiceAccount) (*v1.ServiceAccount, error)
 	// DeleteRole deletes the given role
@@ -327,7 +331,7 @@ type PodOps interface {
 	// ValidatePod validates the given pod if it's ready
 	ValidatePod(pod *v1.Pod, timeout, retryInterval time.Duration) error
 	// WatchPods sets up a watcher that listens for the changes to pods in given namespace
-	WatchPods(namespace string, fn WatchFunc) error
+	WatchPods(namespace string, fn WatchFunc, listOptions meta_v1.ListOptions) error
 }
 
 // StorageClassOps is an interface to perform k8s storage class operations
@@ -598,6 +602,45 @@ type VolumePlacementStrategyOps interface {
 	DeleteVolumePlacementStrategy(name string) error
 	// GetVolumePlacementStrategy returns the volume placememt strategy with given name
 	GetVolumePlacementStrategy(name string) (*talisman_v1beta1.VolumePlacementStrategy, error)
+}
+
+// BackupLocationOps is an interface to perfrom k8s BackupLocation operations
+type BackupLocationOps interface {
+	// CreateBackupLocation creates the BackupLocation
+	CreateBackupLocation(*v1alpha1.BackupLocation) (*v1alpha1.BackupLocation, error)
+	// GetBackupLocation gets the BackupLocation
+	GetBackupLocation(string, string) (*v1alpha1.BackupLocation, error)
+	// ListBackupLocations lists all the BackupLocations
+	ListBackupLocations(string) (*v1alpha1.BackupLocationList, error)
+	// UpdateBackupLocation updates the BackupLocation
+	UpdateBackupLocation(*v1alpha1.BackupLocation) (*v1alpha1.BackupLocation, error)
+	// DeleteBackupLocation deletes the BackupLocation
+	DeleteBackupLocation(string, string) error
+}
+
+// ApplicationBackupRestoreOps is an interface to perfrom k8s Application Backup
+// and Restore operations
+type ApplicationBackupRestoreOps interface {
+	// CreateApplicationBackup creates the ApplicationBackup
+	CreateApplicationBackup(*v1alpha1.ApplicationBackup) (*v1alpha1.ApplicationBackup, error)
+	// GetApplicationBackup gets the ApplicationBackup
+	GetApplicationBackup(string, string) (*v1alpha1.ApplicationBackup, error)
+	// ListApplicationBackups lists all the ApplicationBackups
+	ListApplicationBackups(string) (*v1alpha1.ApplicationBackupList, error)
+	// UpdateApplicationBackup updates the ApplicationBackup
+	UpdateApplicationBackup(*v1alpha1.ApplicationBackup) (*v1alpha1.ApplicationBackup, error)
+	// DeleteApplicationBackup deletes the ApplicationBackup
+	DeleteApplicationBackup(string, string) error
+	// CreateApplicationRestore creates the ApplicationRestore
+	CreateApplicationRestore(*v1alpha1.ApplicationRestore) (*v1alpha1.ApplicationRestore, error)
+	// GetApplicationRestore gets the ApplicationRestore
+	GetApplicationRestore(string, string) (*v1alpha1.ApplicationRestore, error)
+	// ListApplicationRestores lists all the ApplicationRestores
+	ListApplicationRestores(string) (*v1alpha1.ApplicationRestoreList, error)
+	// UpdateApplicationRestore updates the ApplicationRestore
+	UpdateApplicationRestore(*v1alpha1.ApplicationRestore) (*v1alpha1.ApplicationRestore, error)
+	// DeleteApplicationRestore deletes the ApplicationRestore
+	DeleteApplicationRestore(string, string) error
 }
 
 type privateMethods interface {
@@ -957,7 +1000,8 @@ func (k *k8sOps) handleWatch(
 	watchInterface watch.Interface,
 	object runtime.Object,
 	namespace string,
-	fn WatchFunc) {
+	fn WatchFunc,
+	listOptions meta_v1.ListOptions) {
 	for {
 		select {
 		case event, more := <-watchInterface.ResultChan():
@@ -971,7 +1015,7 @@ func (k *k8sOps) handleWatch(
 					} else if cm, ok := object.(*v1.ConfigMap); ok {
 						err = k.WatchConfigMap(cm, fn)
 					} else if _, ok := object.(*v1.Pod); ok {
-						err = k.WatchPods(namespace, fn)
+						err = k.WatchPods(namespace, fn, listOptions)
 					} else {
 						return "", false, fmt.Errorf("unsupported object: %v given to handle watch", object)
 					}
@@ -1012,7 +1056,7 @@ func (k *k8sOps) WatchNode(node *v1.Node, watchNodeFn WatchFunc) error {
 	}
 
 	// fire off watch function
-	go k.handleWatch(watchInterface, node, "", watchNodeFn)
+	go k.handleWatch(watchInterface, node, "", watchNodeFn, listOptions)
 	return nil
 }
 
@@ -2031,6 +2075,14 @@ func (k *k8sOps) CreateClusterRoleBinding(binding *rbac_v1.ClusterRoleBinding) (
 	return k.client.Rbac().ClusterRoleBindings().Create(binding)
 }
 
+func (k *k8sOps) UpdateClusterRoleBinding(binding *rbac_v1.ClusterRoleBinding) (*rbac_v1.ClusterRoleBinding, error) {
+	if err := k.initK8sClient(); err != nil {
+		return nil, err
+	}
+
+	return k.client.Rbac().ClusterRoleBindings().Update(binding)
+}
+
 func (k *k8sOps) GetClusterRoleBinding(name string) (*rbac_v1.ClusterRoleBinding, error) {
 	if err := k.initK8sClient(); err != nil {
 		return nil, err
@@ -2406,15 +2458,12 @@ func (k *k8sOps) ValidatePod(pod *v1.Pod, timeout, retryInterval time.Duration) 
 	return nil
 }
 
-func (k *k8sOps) WatchPods(namespace string, fn WatchFunc) error {
+func (k *k8sOps) WatchPods(namespace string, fn WatchFunc, listOptions meta_v1.ListOptions) error {
 	if err := k.initK8sClient(); err != nil {
 		return err
 	}
 
-	listOptions := meta_v1.ListOptions{
-		Watch: true,
-	}
-
+	listOptions.Watch = true
 	watchInterface, err := k.client.Core().Pods(namespace).Watch(listOptions)
 	if err != nil {
 		logrus.WithError(err).Error("error invoking the watch api for pods")
@@ -2426,7 +2475,8 @@ func (k *k8sOps) WatchPods(namespace string, fn WatchFunc) error {
 		watchInterface,
 		&v1.Pod{},
 		namespace,
-		fn)
+		fn,
+		listOptions)
 
 	return nil
 }
@@ -3338,7 +3388,7 @@ func (k *k8sOps) WatchConfigMap(configMap *v1.ConfigMap, fn WatchFunc) error {
 	}
 
 	// fire off watch function
-	go k.handleWatch(watchInterface, configMap, "", fn)
+	go k.handleWatch(watchInterface, configMap, "", fn, listOptions)
 	return nil
 }
 
@@ -4010,7 +4060,149 @@ func (k *k8sOps) UpdateObject(object runtime.Object) (runtime.Object, error) {
 	return client.Update(unstructured, "")
 }
 
-// Object APIs - BEGIN
+// Object APIs - END
+
+// BackupLocation APIs - BEGIN
+
+func (k *k8sOps) GetBackupLocation(name string, namespace string) (*v1alpha1.BackupLocation, error) {
+	if err := k.initK8sClient(); err != nil {
+		return nil, err
+	}
+
+	backupLocation, err := k.storkClient.Stork().BackupLocations(namespace).Get(name, meta_v1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+	err = backupLocation.UpdateFromSecret(k.client)
+	if err != nil {
+		return nil, err
+	}
+	return backupLocation, nil
+}
+
+func (k *k8sOps) ListBackupLocations(namespace string) (*v1alpha1.BackupLocationList, error) {
+	if err := k.initK8sClient(); err != nil {
+		return nil, err
+	}
+
+	return k.storkClient.Stork().BackupLocations(namespace).List(meta_v1.ListOptions{})
+}
+
+func (k *k8sOps) CreateBackupLocation(backupLocation *v1alpha1.BackupLocation) (*v1alpha1.BackupLocation, error) {
+	if err := k.initK8sClient(); err != nil {
+		return nil, err
+	}
+
+	return k.storkClient.Stork().BackupLocations(backupLocation.Namespace).Create(backupLocation)
+}
+
+func (k *k8sOps) DeleteBackupLocation(name string, namespace string) error {
+	if err := k.initK8sClient(); err != nil {
+		return err
+	}
+
+	return k.storkClient.Stork().BackupLocations(namespace).Delete(name, &meta_v1.DeleteOptions{
+		PropagationPolicy: &deleteForegroundPolicy,
+	})
+}
+
+func (k *k8sOps) UpdateBackupLocation(backupLocation *v1alpha1.BackupLocation) (*v1alpha1.BackupLocation, error) {
+	if err := k.initK8sClient(); err != nil {
+		return nil, err
+	}
+
+	return k.storkClient.Stork().BackupLocations(backupLocation.Namespace).Update(backupLocation)
+}
+
+// BackupLocation APIs - END
+
+// ApplicationBackupRestore APIs - BEGIN
+
+func (k *k8sOps) GetApplicationBackup(name string, namespace string) (*v1alpha1.ApplicationBackup, error) {
+	if err := k.initK8sClient(); err != nil {
+		return nil, err
+	}
+
+	return k.storkClient.Stork().ApplicationBackups(namespace).Get(name, meta_v1.GetOptions{})
+}
+
+func (k *k8sOps) ListApplicationBackups(namespace string) (*v1alpha1.ApplicationBackupList, error) {
+	if err := k.initK8sClient(); err != nil {
+		return nil, err
+	}
+
+	return k.storkClient.Stork().ApplicationBackups(namespace).List(meta_v1.ListOptions{})
+}
+
+func (k *k8sOps) CreateApplicationBackup(backup *v1alpha1.ApplicationBackup) (*v1alpha1.ApplicationBackup, error) {
+	if err := k.initK8sClient(); err != nil {
+		return nil, err
+	}
+
+	return k.storkClient.Stork().ApplicationBackups(backup.Namespace).Create(backup)
+}
+
+func (k *k8sOps) DeleteApplicationBackup(name string, namespace string) error {
+	if err := k.initK8sClient(); err != nil {
+		return err
+	}
+
+	return k.storkClient.Stork().ApplicationBackups(namespace).Delete(name, &meta_v1.DeleteOptions{
+		PropagationPolicy: &deleteForegroundPolicy,
+	})
+}
+
+func (k *k8sOps) UpdateApplicationBackup(backup *v1alpha1.ApplicationBackup) (*v1alpha1.ApplicationBackup, error) {
+	if err := k.initK8sClient(); err != nil {
+		return nil, err
+	}
+
+	return k.storkClient.Stork().ApplicationBackups(backup.Namespace).Update(backup)
+}
+
+func (k *k8sOps) GetApplicationRestore(name string, namespace string) (*v1alpha1.ApplicationRestore, error) {
+	if err := k.initK8sClient(); err != nil {
+		return nil, err
+	}
+
+	return k.storkClient.Stork().ApplicationRestores(namespace).Get(name, meta_v1.GetOptions{})
+}
+
+func (k *k8sOps) ListApplicationRestores(namespace string) (*v1alpha1.ApplicationRestoreList, error) {
+	if err := k.initK8sClient(); err != nil {
+		return nil, err
+	}
+
+	return k.storkClient.Stork().ApplicationRestores(namespace).List(meta_v1.ListOptions{})
+}
+
+func (k *k8sOps) CreateApplicationRestore(restore *v1alpha1.ApplicationRestore) (*v1alpha1.ApplicationRestore, error) {
+	if err := k.initK8sClient(); err != nil {
+		return nil, err
+	}
+
+	return k.storkClient.Stork().ApplicationRestores(restore.Namespace).Create(restore)
+}
+
+func (k *k8sOps) DeleteApplicationRestore(name string, namespace string) error {
+	if err := k.initK8sClient(); err != nil {
+		return err
+	}
+
+	return k.storkClient.Stork().ApplicationRestores(namespace).Delete(name, &meta_v1.DeleteOptions{
+		PropagationPolicy: &deleteForegroundPolicy,
+	})
+}
+
+func (k *k8sOps) UpdateApplicationRestore(restore *v1alpha1.ApplicationRestore) (*v1alpha1.ApplicationRestore, error) {
+	if err := k.initK8sClient(); err != nil {
+		return nil, err
+	}
+
+	return k.storkClient.Stork().ApplicationRestores(restore.Namespace).Update(restore)
+}
+
+// ApplicationBackupRestore APIs - END
 
 func (k *k8sOps) appsClient() v1beta2.AppsV1beta2Interface {
 	return k.client.AppsV1beta2()
