@@ -31,7 +31,7 @@ type ApplicationBackupSpec struct {
 	PreExecRule    string                             `json:"preExecRule"`
 	PostExecRule   string                             `json:"postExecRule"`
 	EncryptionKey  *corev1.EnvVarSource               `json:"encryptionKey"`
-	ReclaimPolicy  ApplicationBackupReclaimPolicyType `json:"recalimPolicy"`
+	ReclaimPolicy  ApplicationBackupReclaimPolicyType `json:"reclaimPolicy"`
 }
 
 // ApplicationBackupReclaimPolicyType is the reclaim policy for the application backup

@@ -19,6 +19,7 @@ import (
 	"github.com/operator-framework/operator-sdk/pkg/sdk"
 	"github.com/portworx/sched-ops/k8s"
 	"github.com/sirupsen/logrus"
+	"gocloud.dev/gcerrors"
 	"k8s.io/api/core/v1"
 	apiextensionsv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -99,15 +100,19 @@ func (a *ApplicationBackupController) performRuleRecovery() error {
 	return lastError
 }
 
+func (a *ApplicationBackupController) setDefaults(backup *stork_api.ApplicationBackup) {
+	if backup.Spec.ReclaimPolicy == "" {
+		backup.Spec.ReclaimPolicy = stork_api.ApplicationBackupReclaimPolicyDelete
+	}
+}
+
 // Handle updates for ApplicationBackup objects
 func (a *ApplicationBackupController) Handle(ctx context.Context, event sdk.Event) error {
 	switch o := event.Object.(type) {
 	case *stork_api.ApplicationBackup:
 		backup := o
 		if event.Deleted {
-			return nil
-			// TODO
-			// return a.cancelBackup(backup)
+			return a.deleteBackup(backup)
 		}
 
 		// Check whether namespace is allowed to be backed before each stage
@@ -126,6 +131,7 @@ func (a *ApplicationBackupController) Handle(ctx context.Context, event sdk.Even
 		var terminationChannels []chan bool
 		var err error
 
+		a.setDefaults(backup)
 		switch backup.Status.Stage {
 		case stork_api.ApplicationBackupStageInitial:
 			// Make sure the namespaces exist
@@ -226,7 +232,7 @@ func (a *ApplicationBackupController) Handle(ctx context.Context, event sdk.Even
 }
 
 func (a *ApplicationBackupController) namespaceBackupAllowed(backup *stork_api.ApplicationBackup) bool {
-	// Restrict backups to only the namespace that the object belongs
+	// Restrict backups to only the namespace that the object belongs to
 	// except for the namespace designated by the admin
 	if backup.Namespace != a.backupAdminNamespace {
 		for _, ns := range backup.Spec.Namespaces {
@@ -245,6 +251,7 @@ func (a *ApplicationBackupController) backupVolumes(backup *stork_api.Applicatio
 		}
 	}()
 
+	// Start backup of the volumes if we don't have any status stored
 	backup.Status.Stage = stork_api.ApplicationBackupStageVolumes
 	if backup.Status.Volumes == nil {
 		volumeInfos, err := a.Driver.StartBackup(backup)
@@ -462,12 +469,15 @@ func (a *ApplicationBackupController) prepareResources(
 	return nil
 }
 
+// Construct the full base path for a given backup
+// The format is "namespace/backupName/backupUID" which will be unique for each backup
 func (a *ApplicationBackupController) getObjectPath(
 	backup *stork_api.ApplicationBackup,
 ) string {
 	return filepath.Join(backup.Namespace, backup.Name, string(backup.UID))
 }
 
+// Uploads the given data to the backup location specified in the backup object
 func (a *ApplicationBackupController) uploadObject(
 	backup *stork_api.ApplicationBackup,
 	objectName string,
@@ -483,7 +493,7 @@ func (a *ApplicationBackupController) uploadObject(
 	}
 
 	objectPath := a.getObjectPath(backup)
-	writer, err := bucket.NewWriter(context.Background(), filepath.Join(objectPath, objectName), nil)
+	writer, err := bucket.NewWriter(context.TODO(), filepath.Join(objectPath, objectName), nil)
 	if err != nil {
 		return err
 	}
@@ -501,6 +511,7 @@ func (a *ApplicationBackupController) uploadObject(
 	return nil
 }
 
+// Convert the list of objects to json and upload to the backup location
 func (a *ApplicationBackupController) uploadResources(
 	backup *stork_api.ApplicationBackup,
 	objects []runtime.Unstructured,
@@ -513,6 +524,7 @@ func (a *ApplicationBackupController) uploadResources(
 	return a.uploadObject(backup, resourceObjectName, jsonBytes)
 }
 
+// Upload the backup object which should have all the required metadata
 func (a *ApplicationBackupController) uploadMetadata(
 	backup *stork_api.ApplicationBackup,
 ) error {
@@ -568,6 +580,7 @@ func (a *ApplicationBackupController) backupResources(
 		return err
 	}
 
+	// Do any additional preparation for the resources if required
 	if err = a.prepareResources(backup, allObjects); err != nil {
 		a.Recorder.Event(backup,
 			v1.EventTypeWarning,
@@ -577,6 +590,7 @@ func (a *ApplicationBackupController) backupResources(
 		return err
 	}
 
+	// Upload the resources to the backup location
 	if err = a.uploadResources(backup, allObjects); err != nil {
 		a.Recorder.Event(backup,
 			v1.EventTypeWarning,
@@ -590,6 +604,7 @@ func (a *ApplicationBackupController) backupResources(
 	backup.Status.FinishTimestamp = metav1.Now()
 	backup.Status.Status = stork_api.ApplicationBackupStatusSuccessful
 
+	// Upload the metadata for the backup to the backup location
 	if err = a.uploadMetadata(backup); err != nil {
 		a.Recorder.Event(backup,
 			v1.EventTypeWarning,
@@ -601,6 +616,41 @@ func (a *ApplicationBackupController) backupResources(
 
 	if err = sdk.Update(backup); err != nil {
 		return err
+	}
+
+	return nil
+}
+
+func (a *ApplicationBackupController) deleteBackup(backup *stork_api.ApplicationBackup) error {
+	// Only delete the backup from the backupLocation if the RecalimPolicy is set to Delete
+	if backup.Spec.ReclaimPolicy != stork_api.ApplicationBackupReclaimPolicyDelete {
+		return nil
+	}
+
+	// TODO: First cancel the backup
+
+	err := a.Driver.DeleteBackup(backup)
+	if err != nil {
+		return err
+	}
+	backupLocation, err := k8s.Instance().GetBackupLocation(backup.Spec.BackupLocation, backup.Namespace)
+	if err != nil {
+		return err
+	}
+	bucket, err := objectstore.GetBucket(backupLocation)
+	if err != nil {
+		return err
+	}
+
+	objectPath := backup.Status.BackupPath
+	if objectPath != "" {
+		if err = bucket.Delete(context.TODO(), filepath.Join(objectPath, resourceObjectName)); err != nil && gcerrors.Code(err) != gcerrors.NotFound {
+			return fmt.Errorf("error deleting resources for backup %v/%v: %v", backup.Namespace, backup.Name, err)
+		}
+
+		if err = bucket.Delete(context.TODO(), filepath.Join(objectPath, metadataObjectName)); err != nil && gcerrors.Code(err) != gcerrors.NotFound {
+			return fmt.Errorf("error deleting metadata for backup %v/%v: %v", backup.Namespace, backup.Name, err)
+		}
 	}
 
 	return nil

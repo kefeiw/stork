@@ -107,18 +107,11 @@ func (a *ApplicationRestoreController) Handle(ctx context.Context, event sdk.Eve
 			// Make sure the namespaces exist
 			for _, ns := range restore.Spec.NamespaceMapping {
 				if _, err := k8s.Instance().GetNamespace(ns); err != nil {
-					restore.Status.Status = stork_api.ApplicationRestoreStatusFailed
-					restore.Status.Stage = stork_api.ApplicationRestoreStageFinal
-					restore.Status.FinishTimestamp = metav1.Now()
-					err = fmt.Errorf("error getting namespace %v: %v", ns, err)
 					log.ApplicationRestoreLog(restore).Errorf(err.Error())
 					a.Recorder.Event(restore,
 						v1.EventTypeWarning,
 						string(stork_api.ApplicationRestoreStatusFailed),
 						err.Error())
-					if err = sdk.Update(restore); err != nil {
-						log.ApplicationRestoreLog(restore).Errorf("Error updating")
-					}
 					return nil
 				}
 			}
@@ -283,7 +276,7 @@ func (a *ApplicationRestoreController) downloadObject(
 	}
 
 	objectPath := backup.Status.BackupPath
-	return bucket.ReadAll(context.Background(), filepath.Join(objectPath, objectName))
+	return bucket.ReadAll(context.TODO(), filepath.Join(objectPath, objectName))
 }
 
 func (a *ApplicationRestoreController) downloadResources(
