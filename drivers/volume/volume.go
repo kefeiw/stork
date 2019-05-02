@@ -128,6 +128,8 @@ type BackupRestorePluginInterface interface {
 	GetBackupStatus(*stork_crd.ApplicationBackup) ([]*stork_crd.ApplicationBackupVolumeInfo, error)
 	// Cancel the backup of volumes specified in the status
 	CancelBackup(*stork_crd.ApplicationBackup) error
+	// Delete the backups specified in the status
+	DeleteBackup(*stork_crd.ApplicationBackup) error
 	// Start restore of volumes specified by the spec. Should only restore
 	// volumes, not the specs associated with them
 	StartRestore(*stork_crd.ApplicationRestore) ([]*stork_crd.ApplicationRestoreVolumeInfo, error)
@@ -300,6 +302,11 @@ func (b *BackupRestoreNotSupported) GetBackupStatus(*stork_crd.ApplicationBackup
 
 // CancelBackup returns ErrNotSupported
 func (b *BackupRestoreNotSupported) CancelBackup(*stork_crd.ApplicationBackup) error {
+	return &errors.ErrNotSupported{}
+}
+
+// DeleteBackup returns ErrNotSupported
+func (b *BackupRestoreNotSupported) DeleteBackup(*stork_crd.ApplicationBackup) error {
 	return &errors.ErrNotSupported{}
 }
 

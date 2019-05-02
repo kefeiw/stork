@@ -1837,6 +1837,25 @@ func (p *portworx) GetBackupStatus(backup *stork_crd.ApplicationBackup) ([]*stor
 	return backup.Status.Volumes, nil
 }
 
+func (p *portworx) DeleteBackup(backup *stork_crd.ApplicationBackup) error {
+	volDriver, err := p.getUserVolDriver(backup.Annotations)
+	if err != nil {
+		return err
+	}
+	for _, vInfo := range backup.Status.Volumes {
+		if vInfo.BackupID != "" {
+			input := &api.CloudBackupDeleteRequest{
+				ID:             vInfo.BackupID,
+				CredentialUUID: p.getCredID(backup.Spec.BackupLocation, backup.Namespace),
+			}
+			if err := volDriver.CloudBackupDelete(input); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func (p *portworx) CancelBackup(backup *stork_crd.ApplicationBackup) error {
 	return &errors.ErrNotSupported{}
 }
