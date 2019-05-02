@@ -1857,7 +1857,31 @@ func (p *portworx) DeleteBackup(backup *stork_crd.ApplicationBackup) error {
 }
 
 func (p *portworx) CancelBackup(backup *stork_crd.ApplicationBackup) error {
-	return &errors.ErrNotSupported{}
+	volDriver, err := p.getUserVolDriver(backup.Annotations)
+	if err != nil {
+		return err
+	}
+	for _, vInfo := range backup.Status.Volumes {
+		taskID := p.getBackupRestoreTaskID(backup.UID, vInfo.Namespace, vInfo.PersistentVolumeClaim)
+		if err := p.stopCloudBackupTask(volDriver, taskID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (p *portworx) stopCloudBackupTask(volDriver volume.VolumeDriver, taskID string) error {
+	input := &api.CloudBackupStateChangeRequest{
+		Name:           taskID,
+		RequestedState: api.CloudBackupRequestedStateStop,
+	}
+	err := volDriver.CloudBackupStateChange(input)
+	if err != nil {
+		if strings.Contains(err.Error(), "Failed to change state: No active backup/restore for the volume") {
+			return nil
+		}
+	}
+	return nil
 }
 
 func (p *portworx) generatePVName() string {
@@ -1933,8 +1957,18 @@ func (p *portworx) GetRestoreStatus(restore *stork_crd.ApplicationRestore) ([]*s
 	return restore.Status.Volumes, nil
 }
 
-func (p *portworx) CancelRestore(backup *stork_crd.ApplicationRestore) error {
-	return &errors.ErrNotSupported{}
+func (p *portworx) CancelRestore(restore *stork_crd.ApplicationRestore) error {
+	volDriver, err := p.getUserVolDriver(restore.Annotations)
+	if err != nil {
+		return err
+	}
+	for _, vInfo := range restore.Status.Volumes {
+		taskID := p.getBackupRestoreTaskID(restore.UID, vInfo.SourceNamespace, vInfo.PersistentVolumeClaim)
+		if err := p.stopCloudBackupTask(volDriver, taskID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (p *portworx) createGroupLocalSnapFromPVCs(groupSnap *stork_crd.GroupVolumeSnapshot, volNames []string, options map[string]string) (

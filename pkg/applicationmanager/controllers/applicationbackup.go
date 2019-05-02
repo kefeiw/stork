@@ -627,12 +627,14 @@ func (a *ApplicationBackupController) deleteBackup(backup *stork_api.Application
 		return nil
 	}
 
-	// TODO: First cancel the backup
-
-	err := a.Driver.DeleteBackup(backup)
-	if err != nil {
+	if err := a.Driver.CancelBackup(backup); err != nil {
 		return err
 	}
+
+	if err := a.Driver.DeleteBackup(backup); err != nil {
+		return err
+	}
+
 	backupLocation, err := k8s.Instance().GetBackupLocation(backup.Spec.BackupLocation, backup.Namespace)
 	if err != nil {
 		return err

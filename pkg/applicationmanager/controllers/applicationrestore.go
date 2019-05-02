@@ -81,9 +81,7 @@ func (a *ApplicationRestoreController) Handle(ctx context.Context, event sdk.Eve
 	case *stork_api.ApplicationRestore:
 		restore := o
 		if event.Deleted {
-			return nil
-			// TODO
-			// return a.cancelRestore(restore)
+			return a.Driver.CancelRestore(restore)
 		}
 
 		a.setDefaults(restore)
