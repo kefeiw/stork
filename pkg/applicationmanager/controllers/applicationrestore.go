@@ -22,7 +22,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
@@ -281,14 +280,14 @@ func (a *ApplicationRestoreController) downloadResources(
 	backup *stork_api.ApplicationBackup,
 	backupLocation string,
 	namespace string,
-) ([]*unstructured.Unstructured, error) {
+) ([]runtime.Unstructured, error) {
 	// TODO: Decrypt if required
 	data, err := a.downloadObject(backup, backupLocation, namespace, resourceObjectName)
 	if err != nil {
 		return nil, err
 	}
 
-	objects := make([]*unstructured.Unstructured, 0)
+	objects := make([]runtime.Unstructured, 0)
 	if err = json.Unmarshal(data, &objects); err != nil {
 		return nil, err
 	}
@@ -364,7 +363,7 @@ func (a *ApplicationRestoreController) getPVNameMappings(
 
 func (a *ApplicationRestoreController) applyResources(
 	restore *stork_api.ApplicationRestore,
-	objects []*unstructured.Unstructured,
+	objects []runtime.Unstructured,
 ) error {
 	pvNameMappings, err := a.getPVNameMappings(restore)
 	if err != nil {
