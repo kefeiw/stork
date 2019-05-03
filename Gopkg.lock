@@ -723,14 +723,14 @@
 
 [[projects]]
   branch = "application_backup"
-  digest = "1:afb7254d974ab7a16e0a114043e97e3d873ada2b54e6b1244d9f8af7130b3164"
+  digest = "1:d89906ffeb8005479c64771f58072d0496c7593473e9476bcab10f3fdacd8912"
   name = "github.com/portworx/sched-ops"
   packages = [
     "k8s",
     "task",
   ]
   pruneopts = "UT"
-  revision = "7b76839ba1a1df06d3c634d8f9838daa9a4a657b"
+  revision = "12ccf3600586f6ebe459e203f09017026aac9c88"
 
 [[projects]]
   branch = "master"
@@ -1781,6 +1781,7 @@
     "gocloud.dev/blob/azureblob",
     "gocloud.dev/blob/gcsblob",
     "gocloud.dev/blob/s3blob",
+    "gocloud.dev/gcerrors",
     "gocloud.dev/gcp",
     "golang.org/x/oauth2/google",
     "google.golang.org/grpc",

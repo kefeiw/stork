@@ -87,6 +87,7 @@ type Ops interface {
 	VolumePlacementStrategyOps
 	BackupLocationOps
 	ApplicationBackupRestoreOps
+	ApplicationCloneOps
 	GetVersion() (*version.Info, error)
 	SetConfig(config *rest.Config)
 	SetClient(client kubernetes.Interface, snapClient rest.Interface, storkClient storkclientset.Interface, apiExtensionClient apiextensionsclient.Interface, dynamicInterface dynamic.Interface)
@@ -641,6 +642,20 @@ type ApplicationBackupRestoreOps interface {
 	UpdateApplicationRestore(*v1alpha1.ApplicationRestore) (*v1alpha1.ApplicationRestore, error)
 	// DeleteApplicationRestore deletes the ApplicationRestore
 	DeleteApplicationRestore(string, string) error
+}
+
+// ApplicationCloneOps is an interface to perfrom k8s Application Clone operations
+type ApplicationCloneOps interface {
+	// CreateApplicationClone creates the ApplicationClone
+	CreateApplicationClone(*v1alpha1.ApplicationClone) (*v1alpha1.ApplicationClone, error)
+	// GetApplicationClone gets the ApplicationClone
+	GetApplicationClone(string, string) (*v1alpha1.ApplicationClone, error)
+	// ListApplicationClones lists all the ApplicationClones
+	ListApplicationClones(string) (*v1alpha1.ApplicationCloneList, error)
+	// UpdateApplicationClone updates the ApplicationClone
+	UpdateApplicationClone(*v1alpha1.ApplicationClone) (*v1alpha1.ApplicationClone, error)
+	// DeleteApplicationClone deletes the ApplicationClone
+	DeleteApplicationClone(string, string) error
 }
 
 type privateMethods interface {
@@ -4203,6 +4218,53 @@ func (k *k8sOps) UpdateApplicationRestore(restore *v1alpha1.ApplicationRestore) 
 }
 
 // ApplicationBackupRestore APIs - END
+
+// ApplicationClone APIs - BEGIN
+
+func (k *k8sOps) GetApplicationClone(name string, namespace string) (*v1alpha1.ApplicationClone, error) {
+	if err := k.initK8sClient(); err != nil {
+		return nil, err
+	}
+
+	return k.storkClient.Stork().ApplicationClones(namespace).Get(name, meta_v1.GetOptions{})
+}
+
+func (k *k8sOps) ListApplicationClones(namespace string) (*v1alpha1.ApplicationCloneList, error) {
+	if err := k.initK8sClient(); err != nil {
+		return nil, err
+	}
+
+	return k.storkClient.Stork().ApplicationClones(namespace).List(meta_v1.ListOptions{})
+}
+
+func (k *k8sOps) CreateApplicationClone(clone *v1alpha1.ApplicationClone) (*v1alpha1.ApplicationClone, error) {
+	if err := k.initK8sClient(); err != nil {
+		return nil, err
+	}
+
+	return k.storkClient.Stork().ApplicationClones(clone.Namespace).Create(clone)
+}
+
+func (k *k8sOps) DeleteApplicationClone(name string, namespace string) error {
+	if err := k.initK8sClient(); err != nil {
+		return err
+	}
+
+	return k.storkClient.Stork().ApplicationClones(namespace).Delete(name, &meta_v1.DeleteOptions{
+		PropagationPolicy: &deleteForegroundPolicy,
+	})
+}
+
+func (k *k8sOps) UpdateApplicationClone(clone *v1alpha1.ApplicationClone) (*v1alpha1.ApplicationClone, error) {
+	if err := k.initK8sClient(); err != nil {
+		return nil, err
+	}
+
+	return k.storkClient.Stork().ApplicationClones(clone.Namespace).Update(clone)
+}
+
+// ApplicationBackupRestore APIs - END
+// ApplicationClone APIs - END
 
 func (k *k8sOps) appsClient() v1beta2.AppsV1beta2Interface {
 	return k.client.AppsV1beta2()
