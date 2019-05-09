@@ -10,6 +10,7 @@ import (
 	migration "github.com/libopenstorage/stork/pkg/migration/controllers"
 	"github.com/portworx/sched-ops/k8s"
 	"github.com/spf13/cobra"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/kubernetes/pkg/kubectl/cmd/util"
 	"k8s.io/kubernetes/pkg/kubectl/genericclioptions"
 	"k8s.io/kubernetes/pkg/printers"
@@ -173,7 +174,7 @@ func updateStatefulSets(namespace string, activate bool, ioStreams genericcliopt
 }
 
 func updateDeployments(namespace string, activate bool, ioStreams genericclioptions.IOStreams) {
-	deployments, err := k8s.Instance().ListDeployments(namespace)
+	deployments, err := k8s.Instance().ListDeployments(namespace, metav1.ListOptions{})
 	if err != nil {
 		util.CheckErr(err)
 		return
