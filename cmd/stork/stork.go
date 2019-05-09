@@ -40,6 +40,7 @@ import (
 const (
 	defaultLockObjectName      = "stork"
 	defaultLockObjectNamespace = "kube-system"
+	defaultAdminNamespace      = "kube-system"
 	eventComponentName         = "stork"
 )
 
@@ -78,12 +79,12 @@ func main() {
 		},
 		cli.StringFlag{
 			Name:  "lock-object-name",
-			Usage: "Name for the lock object (default: stork)",
+			Usage: "Name for the lock object",
 			Value: defaultLockObjectName,
 		},
 		cli.StringFlag{
 			Name:  "lock-object-namespace",
-			Usage: "Namespace for the lock object (default: kube-system)",
+			Usage: "Namespace for the lock object",
 			Value: defaultLockObjectNamespace,
 		},
 		cli.BoolTFlag{
@@ -100,7 +101,8 @@ func main() {
 		},
 		cli.Int64Flag{
 			Name:  "health-monitor-interval",
-			Usage: "The interval in seconds to monitor the health of the storage driver (default: 120, min: 30)",
+			Value: 120,
+			Usage: "The interval in seconds to monitor the health of the storage driver (min: 30)",
 		},
 		cli.BoolTFlag{
 			Name:  "migration-controller",
@@ -116,7 +118,8 @@ func main() {
 		},
 		cli.StringFlag{
 			Name:  "admin-namespace",
-			Usage: "Namespace to be used by a cluster admin which can migrate and backup all other namespaces (default: none)",
+			Value: defaultAdminNamespace,
+			Usage: "Namespace to be used by a cluster admin which can migrate and backup all other namespaces",
 		},
 		cli.BoolFlag{
 			Name:  "storage-cluster-controller",
